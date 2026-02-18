@@ -14,43 +14,34 @@ class WebSocketService {
     private isManuallyClosing: boolean = false;
 
     connect(url: string) {
-        // Prevent redundant connections to the same URL
         if (this.socket && this.url === url && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
-            console.log("[WS] Already connected or connecting to this URL.");
+            // Already active, but we must notify the new listener 
+            // This is handled by the hook calling getStatus()
             return;
         }
 
         if (this.socket) {
-            console.log("[WS] Closing existing connection for new URL/Retry...");
             this.isManuallyClosing = true;
             this.socket.close();
-            this.socket = null;
         }
 
         this.url = url;
         this.isManuallyClosing = false;
-        console.log(`[WS] Attempting connection to: ${url}`);
 
         try {
             this.socket = new WebSocket(url);
 
             this.socket.onopen = () => {
-                console.log("%c[WS] CONNECTED TO REAPER BRIDGE", "color: #1DB954; font-weight: bold");
+                const logStyle = "color: #1DB954; font-weight: bold; background: #000; padding: 2px 5px; border-radius: 3px;";
+                console.log("%c[WS] CONNECTED TO REAPER BRIDGE", logStyle);
                 this.isConnected = true;
-                this.isManuallyClosing = false;
                 this.notifyListeners({ type: "connection", status: "open" });
             };
 
             this.socket.onclose = (event) => {
                 this.isConnected = false;
                 this.notifyListeners({ type: "connection", status: "closed" });
-
-                if (!this.isManuallyClosing) {
-                    console.warn(`[WS] Connection Lost (Code: ${event.code}). Retrying...`);
-                    this.attemptReconnect();
-                } else {
-                    console.log("[WS] Connection closed manually.");
-                }
+                if (!this.isManuallyClosing) this.attemptReconnect();
             };
 
             this.socket.onmessage = (event) => {

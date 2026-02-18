@@ -2,35 +2,49 @@ import { useState, useEffect } from 'react';
 import { reaperWS } from '../api/websocket';
 
 export const useReaperState = () => {
-    const [state, setState] = useState({ tracks: {}, connected: false });
-    const [latency, setLatency] = useState(0);
+    // Inicializa com o estado atual do Singleton para evitar loops
+    const [state, setState] = useState({
+        tracks: {},
+        connected: reaperWS.isConnected
+    });
+
     const [bridgeIp] = useState(() => localStorage.getItem('reaper_bridge_ip') || "");
 
     useEffect(() => {
         if (!bridgeIp) return;
 
-        reaperWS.connect(`ws://${bridgeIp}:8080`);
-
+        // Registrar o listener ANTES de conectar
         const cleanup = reaperWS.addListener((msg) => {
             if (msg.type === "connection") {
-                setState(prev => ({ ...prev, connected: msg.status === "open" }));
-                if (msg.status === "open") reaperWS.send("request_sync", {});
+                const isOpen = msg.status === "open";
+                setState(prev => ({ ...prev, connected: isOpen }));
+                if (isOpen) {
+                    console.log("[HOOK] Connection established, syncing...");
+                    reaperWS.send("request_sync", {});
+                }
             }
-            if (msg.type === "full_sync") setState(msg.state);
+            if (msg.type === "full_sync") {
+                console.log("[HOOK] Received full sync snapshot");
+                setState(prev => ({ ...prev, tracks: msg.state.tracks }));
+            }
             if (msg.type === "track_update") {
                 setState(prev => ({
                     ...prev,
                     tracks: { ...prev.tracks, [msg.trackId]: { ...prev.tracks[msg.trackId], ...msg.data } }
                 }));
             }
-            if (msg.type === "pong") setLatency(Date.now() - msg.timestamp);
         });
 
-        const pingInterval = setInterval(() => {
-            if (reaperWS.isConnected) reaperWS.send("ping", { payload: { timestamp: Date.now() } });
-        }, 5000);
+        // Tentar conectar (o serviço ignora se já estiver conectado)
+        reaperWS.connect(`ws://${bridgeIp}:8080`);
 
-        return () => { cleanup(); clearInterval(pingInterval); };
+        // Se já estivermos conectados (mount tardio), pedimos o sync manualmente
+        if (reaperWS.isConnected) {
+            console.log("[HOOK] Already connected on mount, requesting sync...");
+            reaperWS.send("request_sync", {});
+        }
+
+        return () => cleanup();
     }, [bridgeIp]);
 
     const setTrackParam = (trackId: number, param: string, value: any) => {
@@ -46,7 +60,6 @@ export const useReaperState = () => {
     return {
         tracks: Object.values(state.tracks).sort((a: any, b: any) => a.id - b.id),
         isConnected: state.connected,
-        latency,
         setTrackParam
     };
 };
