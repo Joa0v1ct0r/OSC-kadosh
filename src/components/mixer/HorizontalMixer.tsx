@@ -1,34 +1,36 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ChannelStrip } from './ChannelStrip';
+import { useReaperState } from '../../hooks/useReaperState';
 
 export const HorizontalMixer: React.FC = () => {
-    const [channels, setChannels] = useState(
-        Array.from({ length: 12 }).map((_, i) => ({
-            id: i + 1,
-            name: `Channel ${i + 1}`,
-            level: 0.7 - (i * 0.05),
-            meterLevel: Math.random() * 0.5,
-            isMuted: false,
-            isSoloed: false,
-        }))
-    );
-    const [selectedId, setSelectedId] = useState<number | null>(1);
+    const { tracks, setTrackParam } = useReaperState();
 
-    const updateChannel = (id: number, patch: any) => {
-        setChannels(prev => prev.map(ch => ch.id === id ? { ...ch, ...patch } : ch));
-    };
+    if (tracks.length === 0) {
+        return (
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 text-white/20">
+                <div className="w-12 h-12 border-2 border-white/10 border-t-brand-active animate-spin rounded-full" />
+                <span className="uppercase tracking-[0.3em] font-bold text-sm">Waiting for REAPER Configuration...</span>
+                <span className="text-[10px] font-mono lowercase">Bridge active. Check OSC patterns in Reaper.</span>
+            </div>
+        );
+    }
 
     return (
-        <div className="flex flex-1 overflow-x-auto overflow-y-hidden bg-black/20 scroll-smooth px-8">
-            {channels.map((ch) => (
+        <div className="flex flex-1 overflow-x-auto overflow-y-hidden bg-black/20 scroll-smooth">
+            {tracks.map((track) => (
                 <ChannelStrip
-                    key={ch.id}
-                    {...ch}
-                    isSelected={selectedId === ch.id}
-                    onLevelChange={(val) => updateChannel(ch.id, { level: val })}
-                    onToggleMute={() => updateChannel(ch.id, { isMuted: !ch.isMuted })}
-                    onToggleSolo={() => updateChannel(ch.id, { isSoloed: !ch.isSoloed })}
-                    onSelect={() => setSelectedId(ch.id)}
+                    key={track.id}
+                    id={track.id}
+                    name={track.name}
+                    level={track.volume}
+                    meterLevel={track.meter || 0}
+                    isMuted={Boolean(track.mute)}
+                    isSoloed={Boolean(track.solo)}
+                    isSelected={false} // Can be added later with global store
+                    onLevelChange={(val) => setTrackParam(track.id, "volume", val)}
+                    onToggleMute={() => setTrackParam(track.id, "mute", track.mute ? 0 : 1)}
+                    onToggleSolo={() => setTrackParam(track.id, "solo", track.solo ? 0 : 1)}
+                    onSelect={() => { }}
                 />
             ))}
         </div>
