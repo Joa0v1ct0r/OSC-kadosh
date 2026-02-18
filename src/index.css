@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-active: #1DB954;
+  --color-brand-solo: #FFD400;
+  --color-brand-mute: #FF3B3B;
+  --color-bg-base: #0B0B0B;
+  --color-bg-surface: #1A1A1A;
+
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  background-color: var(--color-bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  /* Prevents double-tap to zoom */
+}
+
+body {
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  overscroll-behavior: none;
+  /* Prevents pull-to-refresh on mobile */
+}
+
+input[type="range"] {
+  touch-action: none;
+  /* Critical for slider precision */
+}
+
+/* Scrollbar Hide for mixing surface feel */
+::-webkit-scrollbar {
+  display: none;
+}
