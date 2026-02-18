@@ -4,10 +4,13 @@ import { reaperWS } from '../api/websocket';
 export const useReaperState = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [latency, setLatency] = useState(0);
-    const [bridgeIp] = useState(() => localStorage.getItem('reaper_bridge_ip') || "192.168.1.100");
+    // Busca o IP, mas só tenta conectar se ele for válido
+    const [bridgeIp] = useState(() => localStorage.getItem('reaper_bridge_ip') || "");
 
     useEffect(() => {
-        // Connect to current IP
+        if (!bridgeIp) return;
+
+        console.log(`[HOOK] Iniciar conexão com ${bridgeIp}`);
         reaperWS.connect(`ws://${bridgeIp}:8080`);
 
         const cleanup = reaperWS.addListener((msg) => {
@@ -19,16 +22,18 @@ export const useReaperState = () => {
             }
         });
 
-        // Simple ping for latency
         const pingInterval = setInterval(() => {
-            reaperWS.send("ping", { timestamp: Date.now() });
-        }, 2000);
+            if (reaperWS.isConnected) {
+                reaperWS.send("ping", { payload: { timestamp: Date.now() } });
+            }
+        }, 3000);
 
         return () => {
+            console.log("[HOOK] Limpando conexão anterior...");
             cleanup();
             clearInterval(pingInterval);
         };
-    }, [bridgeIp]);
+    }, [bridgeIp]); // Só re-executa se o IP mudar
 
     return { isConnected, latency };
 };

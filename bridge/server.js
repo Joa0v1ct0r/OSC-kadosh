@@ -1,26 +1,23 @@
 /**
- * REAPER OSC BRIDGE SERVER - V2 (STABLE)
- * WebSocket <-> OSC (UDP) Bidirectional Translator
+ * REAPER OSC BRIDGE SERVER - V3 (STABLE)
  */
 
 const osc = require("osc");
 const { WebSocketServer, WebSocket } = require("ws");
 
-// --- CONFIGURATION ---
 const CONFIG = {
     WS_PORT: 8080,
-    OSC_LOCAL_PORT: 9000,    // Port to receive feedback from Reaper
-    OSC_REMOTE_PORT: 8000,   // Port to send commands to Reaper
-    REAPER_IP: "127.0.0.1",  // If Reaper is on the same PC
-    THROTTLE_MS: 16          // Rate limit for OSC sending
+    OSC_LOCAL_PORT: 9000,
+    OSC_REMOTE_PORT: 8000,
+    REAPER_IP: "127.0.0.1",
+    THROTTLE_MS: 30
 };
 
 console.clear();
 console.log("=========================================");
-console.log("   🚀 REAPER OSC BRIDGE - ACTIVE");
+console.log("   🚀 REAPER OSC BRIDGE - STABLE MODE");
 console.log("=========================================");
 
-// --- OSC UDP SETUP ---
 const udpPort = new osc.UDPPort({
     localAddress: "0.0.0.0",
     localPort: CONFIG.OSC_LOCAL_PORT,
@@ -29,11 +26,10 @@ const udpPort = new osc.UDPPort({
     metadata: true
 });
 
-// --- WEBSOCKET SETUP ---
-// host: "0.0.0.0" allows any device on your Wi-Fi to connect
 const wss = new WebSocketServer({
     port: CONFIG.WS_PORT,
-    host: "0.0.0.0"
+    host: "0.0.0.0",
+    clientTracking: true
 });
 
 let lastOscSend = 0;
@@ -41,20 +37,11 @@ let lastOscSend = 0;
 udpPort.open();
 
 udpPort.on("ready", () => {
-    console.log(`[UDP] ✅ OSC Active`);
-    console.log(`      - Listening for Reaper feedback on: 9000`);
-    console.log(`      - Sending commands to Reaper at: ${CONFIG.REAPER_IP}:8000`);
+    console.log(`[UDP] ✅ OSC Active on port ${CONFIG.OSC_LOCAL_PORT}`);
+    console.log(`[WS]  ✅ Server listening on port ${CONFIG.WS_PORT}`);
 });
 
-wss.on("listening", () => {
-    console.log(`[WS]  ✅ Server listening on port: ${CONFIG.WS_PORT}`);
-    console.log(`      - ACCESS URL: ws://[YOUR_PC_IP]:${CONFIG.WS_PORT}`);
-});
-
-// Broadcast Reaper changes to all connected Tablets
 udpPort.on("message", (oscMsg) => {
-    console.log(`[REAPER -> WS] ${oscMsg.address} : ${oscMsg.args.map(a => a.value).join(", ")}`);
-
     const payload = JSON.stringify({
         type: "osc_feedback",
         address: oscMsg.address,
@@ -69,8 +56,10 @@ udpPort.on("message", (oscMsg) => {
 });
 
 wss.on("connection", (ws, req) => {
-    const clientIp = req.socket.remoteAddress;
-    console.log(`[WS]  📱 Client Connected: ${clientIp}`);
+    const rawIp = req.socket.remoteAddress;
+    const cleanIp = rawIp.includes("::ffff:") ? rawIp.split("::ffff:")[1] : rawIp;
+
+    console.log(`[WS]  📱 Client Connected: ${cleanIp}`);
 
     ws.on("message", (data) => {
         try {
@@ -87,23 +76,25 @@ wss.on("connection", (ws, req) => {
                 lastOscSend = now;
 
                 const { track, fx, param, value } = msg.payload;
-                const addr = `/track/${track}/fx/${fx}/fxparam/${param}/value`;
-
-                console.log(`[WS -> REAPER] ${addr} -> ${value.toFixed(3)}`);
-
                 udpPort.send({
-                    address: addr,
+                    address: `/track/${track}/fx/${fx}/fxparam/${param}/value`,
                     args: [{ type: "f", value: parseFloat(value) }]
                 });
             }
-        } catch (e) {
-            console.error("[WS]  ❌ Message error:", e.message);
-        }
+        } catch (e) { }
     });
 
-    ws.on("close", () => console.log(`[WS]  ❌ Client Disconnected: ${clientIp}`));
-    ws.on("error", (err) => console.error(`[WS]  ❌ Client Socket Error:`, err.message));
+    ws.on("close", () => console.log(`[WS]  ❌ Client Disconnected: ${cleanIp}`));
+    ws.on("error", () => { });
 });
 
-wss.on("error", (err) => console.error("[WS]  ❌ Server Fatal Error:", err.message));
-udpPort.on("error", (err) => console.error("[UDP] ❌ OSC Error:", err.message));
+wss.on("error", (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`\n[FATAL] A porta ${CONFIG.WS_PORT} já está ocupada!`);
+        console.error(`[DICA] Feche o outro servidor ou use: Stop-Process -Id (Get-NetTCPConnection -LocalPort ${CONFIG.WS_PORT}).OwningProcess -Force\n`);
+    } else {
+        console.error("[WS] Error:", err.message);
+    }
+});
+
+udpPort.on("error", (err) => console.error("[UDP] Error:", err.message));
