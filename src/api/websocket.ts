@@ -1,12 +1,7 @@
 /**
- * REAPER WebSocket Service
+ * REAPER WebSocket Service - V3 (Anti-Churn)
  * Handles low-latency bidirectional OSC communication.
  */
-
-type WSMessage = {
-    type: string;
-    payload: any;
-};
 
 type Listener = (data: any) => void;
 
@@ -16,16 +11,24 @@ class WebSocketService {
     private reconnectTimeout: number | null = null;
     private url: string = "";
     public isConnected: boolean = false;
-
-    constructor() { }
+    private isManuallyClosing: boolean = false;
 
     connect(url: string) {
+        // Prevent redundant connections to the same URL
+        if (this.socket && this.url === url && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+            console.log("[WS] Already connected or connecting to this URL.");
+            return;
+        }
+
         if (this.socket) {
-            console.log("[WS] Closing existing connection...");
+            console.log("[WS] Closing existing connection for new URL/Retry...");
+            this.isManuallyClosing = true;
             this.socket.close();
+            this.socket = null;
         }
 
         this.url = url;
+        this.isManuallyClosing = false;
         console.log(`[WS] Attempting connection to: ${url}`);
 
         try {
@@ -34,14 +37,20 @@ class WebSocketService {
             this.socket.onopen = () => {
                 console.log("%c[WS] CONNECTED TO REAPER BRIDGE", "color: #1DB954; font-weight: bold");
                 this.isConnected = true;
+                this.isManuallyClosing = false;
                 this.notifyListeners({ type: "connection", status: "open" });
             };
 
             this.socket.onclose = (event) => {
-                console.warn(`[WS] Connection Closed (Code: ${event.code})`);
                 this.isConnected = false;
                 this.notifyListeners({ type: "connection", status: "closed" });
-                this.attemptReconnect();
+
+                if (!this.isManuallyClosing) {
+                    console.warn(`[WS] Connection Lost (Code: ${event.code}). Retrying...`);
+                    this.attemptReconnect();
+                } else {
+                    console.log("[WS] Connection closed manually.");
+                }
             };
 
             this.socket.onmessage = (event) => {
@@ -63,35 +72,26 @@ class WebSocketService {
 
     private attemptReconnect() {
         if (this.reconnectTimeout) return;
-        console.log("[WS] Reconnect scheduled in 3s...");
         this.reconnectTimeout = window.setTimeout(() => {
             this.reconnectTimeout = null;
-            console.log("Attempting Reconnect...");
-            this.connect(this.url);
-        }, 3000);
+            if (!this.isConnected) {
+                this.connect(this.url);
+            }
+        }, 5000); // 5s wait to be safe
     }
 
     send(type: string, payload: any) {
-        if (this.socket && this.isConnected) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({ type, payload }));
         }
     }
 
-    /**
-     * Specifically for FX Parameters as requested
-     */
     private lastSend: number = 0;
     sendFXParam(track: number, fx: number, param: number, value: number) {
         const now = Date.now();
-        if (now - this.lastSend < 30) return; // 30ms throttle
+        if (now - this.lastSend < 30) return;
         this.lastSend = now;
-
-        this.send("fxparam", {
-            track,
-            fx,
-            param,
-            value: Math.min(1, Math.max(0, value)) // Clamp 0-1
-        });
+        this.send("fxparam", { track, fx, param, value: Math.min(1, Math.max(0, value)) });
     }
 
     addListener(callback: Listener) {
