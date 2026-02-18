@@ -87,7 +87,7 @@ class WebSocketService {
 
     addListener(callback: Listener) {
         this.listeners.add(callback);
-        return () => this.listeners.delete(callback);
+        return () => { this.listeners.delete(callback); };
     }
 
     private notifyListeners(data: any) {

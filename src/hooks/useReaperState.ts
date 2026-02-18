@@ -1,9 +1,22 @@
 import { useState, useEffect } from 'react';
 import { reaperWS } from '../api/websocket';
 
+export interface Track {
+    id: number;
+    name: string;
+    volume: number;
+    mute: number;
+    solo: number;
+    meter?: number;
+}
+
+export interface MixerState {
+    tracks: Record<string, Track>;
+    connected: boolean;
+}
+
 export const useReaperState = () => {
-    // Inicializa com o estado atual do Singleton para evitar loops
-    const [state, setState] = useState({
+    const [state, setState] = useState<MixerState>({
         tracks: {},
         connected: reaperWS.isConnected
     });
@@ -11,43 +24,57 @@ export const useReaperState = () => {
     const [bridgeIp] = useState(() => localStorage.getItem('reaper_bridge_ip') || "");
 
     useEffect(() => {
-        if (!bridgeIp) return;
+        if (!bridgeIp) {
+            return;
+        }
 
-        // Registrar o listener ANTES de conectar
-        const cleanup = reaperWS.addListener((msg) => {
+        const unsubscribe = reaperWS.addListener((msg) => {
             if (msg.type === "connection") {
                 const isOpen = msg.status === "open";
                 setState(prev => ({ ...prev, connected: isOpen }));
                 if (isOpen) {
-                    console.log("[HOOK] Connection established, syncing...");
                     reaperWS.send("request_sync", {});
                 }
             }
             if (msg.type === "full_sync") {
-                console.log("[HOOK] Received full sync snapshot");
                 setState(prev => ({ ...prev, tracks: msg.state.tracks }));
             }
             if (msg.type === "track_update") {
-                setState(prev => ({
-                    ...prev,
-                    tracks: { ...prev.tracks, [msg.trackId]: { ...prev.tracks[msg.trackId], ...msg.data } }
-                }));
+                setState(prev => {
+                    const trackId = String(msg.trackId);
+                    const existingTrack = prev.tracks[trackId] || {
+                        id: Number(trackId),
+                        name: `Track ${trackId}`,
+                        volume: 0,
+                        mute: 0,
+                        solo: 0
+                    };
+
+                    return {
+                        ...prev,
+                        tracks: {
+                            ...prev.tracks,
+                            [trackId]: { ...existingTrack, ...msg.data }
+                        }
+                    };
+                });
             }
         });
 
-        // Tentar conectar (o serviço ignora se já estiver conectado)
         reaperWS.connect(`ws://${bridgeIp}:8080`);
 
-        // Se já estivermos conectados (mount tardio), pedimos o sync manualmente
         if (reaperWS.isConnected) {
-            console.log("[HOOK] Already connected on mount, requesting sync...");
             reaperWS.send("request_sync", {});
         }
 
-        return () => cleanup();
+        return () => {
+            unsubscribe();
+        };
     }, [bridgeIp]);
 
     const setTrackParam = (trackId: number, param: string, value: any) => {
+        console.log(`[UI -> REAPER] ${param} track ${trackId} -> ${value}`);
+
         reaperWS.send("control", {
             payload: {
                 address: `/track/${trackId}/${param}`,
@@ -58,7 +85,7 @@ export const useReaperState = () => {
     };
 
     return {
-        tracks: Object.values(state.tracks).sort((a: any, b: any) => a.id - b.id),
+        tracks: Object.values(state.tracks).sort((a, b) => a.id - b.id),
         isConnected: state.connected,
         setTrackParam
     };
